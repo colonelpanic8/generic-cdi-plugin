@@ -45,10 +45,13 @@ func (dp *GenericCDIPlugin) createDevice() {
 func (dp *GenericCDIPlugin) collectGarbage() {
 	resource := fmt.Sprintf("%s-%s", dp.kind, dp.resource)
 
-	dp.mu.Lock()
+	dp.printf("collectGarbage")
+
 	dp.printf("collecting garbage...")
+	dp.mu.Lock()
 	start := time.Now()
 
+	dp.printf("collectGarbage List")
 	resp, err := dp.client.List(context.Background(), &podresourcesv1.ListPodResourcesRequest{})
 	if err != nil {
 		log.Fatalf("Failed to list pod resources: %v", err)
@@ -71,14 +74,17 @@ func (dp *GenericCDIPlugin) collectGarbage() {
 		}
 	}
 	dp.devices = newDevices
+	dp.printf("collectGarbage createDevice")
 	dp.createDevice()
 	duration := time.Since(start)
 	dp.printf("garbage collection took %v seconds", duration.Seconds())
 	dp.mu.Unlock()
+	dp.printf("collectGarbage Unlock finished")
 	dp.update <- true
 }
 
 func (dp *GenericCDIPlugin) Allocate(ctx context.Context, r *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
+	dp.printf("Allocate")
 	responses := &pluginapi.AllocateResponse{}
 	for _, req := range r.ContainerRequests {
 		devices := []*pluginapi.CDIDevice{}
@@ -94,9 +100,14 @@ func (dp *GenericCDIPlugin) Allocate(ctx context.Context, r *pluginapi.AllocateR
 		})
 	}
 
+	dp.printf("About to lock")
+
 	dp.mu.Lock()
+	dp.printf("Creating device")
 	dp.createDevice()
+	dp.printf("About to unlock")
 	dp.mu.Unlock()
+	dp.printf("Unlocked, Allocate finished")
 	dp.update <- true
 	return responses, nil
 }
@@ -113,8 +124,10 @@ func (*GenericCDIPlugin) GetPreferredAllocation(context.Context, *pluginapi.Pref
 }
 
 func (dp *GenericCDIPlugin) ListAndWatch(e *pluginapi.Empty, s pluginapi.DevicePlugin_ListAndWatchServer) error {
+	dp.printf("ListAndWatch")
 	dp.printf("listening...")
 	for {
+		dp.printf("ListAndWatch loop")
 		s.Send(&pluginapi.ListAndWatchResponse{
 			Devices: dp.devices,
 		})
@@ -133,6 +146,7 @@ func (*GenericCDIPlugin) PreStartContainer(context.Context, *pluginapi.PreStartC
 }
 
 func (dp *GenericCDIPlugin) Start() error {
+	dp.printf("Start")
 	dp.createDevice()
 
 	go func(dp *GenericCDIPlugin) {
@@ -147,13 +161,17 @@ func (dp *GenericCDIPlugin) Start() error {
 		}
 	}(dp)
 
+	dp.printf("Start Finish")
+
 	return nil
 }
 
 func (dp *GenericCDIPlugin) Stop() error {
+	dp.printf("Stop")
 	dp.stop <- true
 	dp.conn.Close()
 
+	dp.printf("Stop Finish")
 	return nil
 }
 
@@ -162,18 +180,22 @@ type GenericCDIPluginLister struct {
 }
 
 func (l *GenericCDIPluginLister) Discover(pluginListCh chan dpm.PluginNameList) {
+	log.Printf("Discover")
 	plugins := dpm.PluginNameList{}
 	for _, device := range l.spec.Devices {
 		plugins = append(plugins, fmt.Sprintf("%s-%s", l.spec.GetClass(), device.Name))
 	}
 	pluginListCh <- plugins
+	log.Printf("Discover Finish")
 }
 
 func (l *GenericCDIPluginLister) GetResourceNamespace() string {
+	log.Printf("GetResourceNamespace")
 	return l.spec.GetVendor()
 }
 
 func (l *GenericCDIPluginLister) NewPlugin(name string) dpm.PluginInterface {
+	log.Printf("NewPlugin")
 	resource := name[len(l.spec.GetClass())+1:]
 	log.Printf("Registering plugin for %s=%s", l.spec.Kind, resource)
 
@@ -181,6 +203,8 @@ func (l *GenericCDIPluginLister) NewPlugin(name string) dpm.PluginInterface {
 	if err != nil {
 		log.Fatalf("Failed to connect to pod-resources kubelet: %v", err)
 	}
+
+	log.Printf("NewPlugin Finish")
 
 	return &GenericCDIPlugin{
 		resource: resource,
@@ -202,8 +226,10 @@ func main() {
 
 	spec, err := cdi.ReadSpec(cdiJSON, 0)
 	if err != nil {
+		log.Fatal("Error reading cdiJSON")
 		panic(err)
 	}
+	log.Printf("Running manager")
 	dpm.NewManager(&GenericCDIPluginLister{
 		spec: spec,
 	}).Run()
