@@ -219,7 +219,7 @@ func (l *GenericCDIPluginLister) NewPlugin(name string) dpm.PluginInterface {
 
 func main() {
 	flag.Parse()
-	if flag.NArg() != 1 {
+	if flag.NArg() < 1 {
 		log.Fatal("No path to CDI JSON provided. Exiting.")
 	}
 	cdiJSON := flag.Arg(0)
